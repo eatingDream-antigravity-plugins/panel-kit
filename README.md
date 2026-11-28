@@ -46,8 +46,8 @@ Panel Kit is the small bridge, theme, and build setup these plugins use to ship 
 | **Warm SWR Cache (`src/swr_cache.rs`)** | `< 1 ms` cached reads with deduplicated background refreshes, bounded cold-start waits, and revision-based unchanged checks. |
 | **Safe HTML Boot (`src/html_boot.rs`)** | File `(mtime, size)` template cache with `</script>` and `<!--` safe JSON escaping for embedded single-file panels. |
 | **Safe Test Guards (`src/test_guard.rs`)** | Compile-time test-mode blockers preventing unit tests from mutating displays, browsers, or live host state. |
-| **Lucid Indigo Theme & Bridge (`panel/tokens.css`, `panel/bridge.ts`)** | 22 dark/light tokens (`#0B0D12` / `#F8FAFD`, Cobalt `#6895FF` / `#2952CC`), strict parent PostMessage origin checks, live theme sync, and net RTT timing. |
-| **Browserless QA & i18n Gate (`panel/guard.ts`)** | Enforces `<= 64 KiB` (`65,536 B`, `56 KiB` warn) single-script CSP bounds, Lucid Indigo token & dark-first lock checks, plus `checkI18nParity` and `checkEnNoCjk` for EN/ZH copy. |
+| **Lucid Indigo Theme & Bridge (`panel/tokens.css`, `panel/bridge.ts`)** | Dark/light Lucid Indigo tokens (`#0B0D12` / `#F8FAFD`, Cobalt `#6895FF` / `#2952CC`, `--bd` backdrop), strict parent PostMessage origin checks, 3-mode host theme sync (`system` / `light` / `dark`), and net RTT timing. |
+| **Browserless QA & i18n Gate (`panel/guard.ts`)** | Enforces `<= 64 KiB` (`65,536 B`, `56 KiB` warn) inline `<script>` / `<script type="module">` CSP bounds, Dark & Light Byte-0 SSR root locks, Lucid Indigo token checks, plus `checkI18nParity` and `checkEnNoCjk` for EN/ZH copy. |
 
 ## Quick Start
 
