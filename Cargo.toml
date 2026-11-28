@@ -1,6 +1,6 @@
 [package]
 name = "agy-mcp-kit"
-version = "0.4.1"
+version = "0.4.2"
 edition = "2021"
 rust-version = "1.75"
 description = "Zero-bloat Rust MCP runtime primitives, dark-first panel kit, and drift-checked vendor sync for Antigravity plugins"

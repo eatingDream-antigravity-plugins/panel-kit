@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.2](https://github.com/eatingDream-antigravity-plugins/panel-kit/compare/v0.4.1...v0.4.2) (2026-11-28)
+
+
+### Bug Fixes
+
+* add 3-mode host theme preference, module script, and light SSR guard ([#15](https://github.com/eatingDream-antigravity-plugins/panel-kit/issues/15)) ([162cdbc](https://github.com/eatingDream-antigravity-plugins/panel-kit/commit/162cdbc4a73c0c5317565c09dfca455d2a6e7f9d))
+
 ## [0.4.1](https://github.com/eatingDream-antigravity-plugins/panel-kit/compare/v0.4.0...v0.4.1) (2026-11-28)
 
 
