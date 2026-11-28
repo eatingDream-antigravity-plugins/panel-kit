@@ -9,6 +9,7 @@ import { fileURLToPath } from "node:url";
 import {
   App,
   LATEST_PROTOCOL_VERSION,
+  applyDocumentTheme,
   applyHostContext,
   applyHostStyleVariables,
   measureNetRttMs,
@@ -141,6 +142,7 @@ interface PanelHtmlOverrides {
   metaTag?: string;
   cspTag?: string;
   bodyTag?: string;
+  appMarkup?: string;
   scriptBlock?: string;
 }
 
@@ -152,8 +154,11 @@ function buildValidPanelHtml(overrides: PanelHtmlOverrides = {}): string {
     overrides.cspTag ??
     `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'">`;
   const bodyTag = overrides.bodyTag ?? '<body style="background:#0B0D12">';
+  const appMarkup =
+    overrides.appMarkup ??
+    '<div id="app"><div class="boot-frame"><div class="boot-bar"><span class="boot-dot"></span>Panel Kit</div></div></div>';
   const scriptBlock = overrides.scriptBlock ?? "<script>/*__BOOT__*/const ok=1;</script>";
-  return `<!doctype html>${htmlTag}<head>${metaTag}${cspTag}<style>${css}</style></head>${bodyTag}<main>Panel</main>${scriptBlock}</body></html>`;
+  return `<!doctype html>${htmlTag}<head>${metaTag}${cspTag}<style>${css}</style></head>${bodyTag}${appMarkup}${scriptBlock}</body></html>`;
 }
 
 describe("agy-mcp-kit Panel Bridge (SEP-1865)", () => {
@@ -460,8 +465,77 @@ describe("agy-mcp-kit Panel Bridge (SEP-1865)", () => {
     }
     assert.equal(parseColorLum("rgb(. . .)"), null);
     assert.equal(parseColorLum("rgb(10, 20, 30)"), (0.2126 * 10 + 0.7152 * 20 + 0.0722 * 30) / 255);
-    applyHostStyleVariables({ "--color-background-primary": "oklch(0.2 0 0 / 0.95)" }, fakeEl);
-    assert.equal(props.get("--color-background-primary"), "oklch(0.2 0 0 / 0.95)");
+    for (const nonRgb of ["oklch(0.2 0 0 / 0.95)", "oklch(1 0 0)", "hsl(0, 0%, 100%)", "lab(100% 0 0)"]) {
+      applyHostStyleVariables({ "--color-background-primary": nonRgb }, fakeEl);
+      assert.equal(
+        props.has("--color-background-primary"),
+        false,
+        `should reject lum:null color ${nonRgb}`
+      );
+    }
+    applyHostStyleVariables({ "--color-background-primary": "#0B0D12" }, fakeEl);
+    assert.equal(props.get("--color-background-primary"), "#0B0D12");
+
+    // 1b. applyDocumentTheme uses literal #0B0D12/#F8FAFD (never var(--color-background-primary,...))
+    // and defers "light" via requestAnimationFrame (or setTimeout fallback) while .boot-frame is mounted
+    const rafQueue: Array<() => void> = [];
+    let bootMounted = true;
+    const bootEnv = makeFakeEnv();
+    const origQuery = bootEnv.doc.querySelector!;
+    bootEnv.doc.querySelector = (sel: string) => {
+      if (sel === ".boot-frame") {
+        return bootMounted
+          ? { getAttribute: () => "boot-frame", setAttribute: () => {} }
+          : null;
+      }
+      return origQuery(sel);
+    };
+    bootEnv.win.requestAnimationFrame = (cb: () => void) => {
+      rafQueue.push(cb);
+      return rafQueue.length;
+    };
+
+    applyDocumentTheme("light", bootEnv.doc, bootEnv.win);
+    assert.equal(
+      bootEnv.attrs.get("data-theme"),
+      undefined,
+      "unmounted .boot-frame must stay dark on Frame 0 until rAF"
+    );
+    assert.equal(bootEnv.doc.documentElement?.style?.backgroundColor, "#0B0D12");
+    assert.equal(bootEnv.doc.body?.style?.backgroundColor, "#0B0D12");
+    assert.equal(rafQueue.length, 1);
+
+    // Simulate app mounting UI and flushing rAF -> switches cleanly to literal #F8FAFD
+    bootMounted = false;
+    rafQueue.shift()!();
+    assert.equal(bootEnv.attrs.get("data-theme"), "light");
+    assert.equal(bootEnv.doc.documentElement?.style?.backgroundColor, "#F8FAFD");
+    assert.equal(bootEnv.doc.body?.style?.backgroundColor, "#F8FAFD");
+    assert.equal(bootEnv.metaAttrs.get("content"), "light");
+
+    // If dark arrives while a deferred light rAF is pending, stale light rAF must not clobber dark
+    bootMounted = true;
+    applyDocumentTheme("dark", bootEnv.doc, bootEnv.win);
+    assert.equal(bootEnv.doc.documentElement?.style?.backgroundColor, "#0B0D12");
+    applyDocumentTheme("light", bootEnv.doc, bootEnv.win);
+    assert.equal(rafQueue.length, 1);
+    applyDocumentTheme("dark", bootEnv.doc, bootEnv.win);
+    rafQueue.shift()!();
+    assert.equal(bootEnv.attrs.get("data-theme"), "dark");
+    assert.equal(bootEnv.doc.documentElement?.style?.backgroundColor, "#0B0D12");
+
+    // setTimeout(..., 0) fallback when requestAnimationFrame is unavailable
+    const noRafEnv = makeFakeEnv();
+    const noRafOrigQuery = noRafEnv.doc.querySelector!;
+    noRafEnv.doc.querySelector = (sel: string) =>
+      sel === ".boot-frame"
+        ? { getAttribute: () => "boot-frame", setAttribute: () => {} }
+        : noRafOrigQuery(sel);
+    applyDocumentTheme("light", noRafEnv.doc, null);
+    assert.equal(noRafEnv.attrs.get("data-theme"), undefined);
+    await new Promise((r) => setTimeout(r, 10));
+    assert.equal(noRafEnv.attrs.get("data-theme"), "light");
+    assert.equal(noRafEnv.doc.documentElement?.style?.backgroundColor, "#F8FAFD");
 
     // 2. close() during retryDelayMs sleep cancels timer immediately (< 50ms for 600ms delay)
     const env = makeFakeEnv();
@@ -586,6 +660,38 @@ describe("agy-mcp-kit Panel QA Gate (guard.ts) & tokens.css", () => {
     assert.equal(LIGHT_ACCENT_HEX, "#2952CC");
     assert.equal(DARK_OK_HEX, "#34D399");
     assert.equal(LIGHT_OK_HEX, "#059669");
+    assert.equal(TOKENS_CSS.includes("--color-background-primary"), false);
+    assert.equal(TOKENS_CSS.includes("--color-text-primary"), false);
+    assert.match(TOKENS_CSS, /\.boot-frame\b/);
+    assert.match(TOKENS_CSS, /\.boot-bar\b/);
+    assert.match(TOKENS_CSS, /\.boot-dot\b/);
+
+    // Minified unquoted id=app / class=boot-frame and extra #app attributes MUST pass
+    assert.equal(
+      checkPanelInvariants(
+        buildValidPanelHtml({
+          appMarkup:
+            '<div id=app><div class=boot-frame><div class=boot-bar><span class=boot-dot></span>Clam Guard</div></div></div>',
+        })
+      ).ok,
+      true
+    );
+    assert.equal(
+      checkPanelInvariants(
+        buildValidPanelHtml({
+          appMarkup:
+            '<div id="app" class="app" data-ps="0"><div class="boot-frame"><div class="boot-bar"><span class="boot-dot"></span>Colab Deck</div></div></div>',
+        })
+      ).ok,
+      true
+    );
+    // allowEmptyAppRoot: true explicitly permits legacy/minimal test HTML without .boot-frame
+    assert.equal(
+      checkPanelInvariants(buildValidPanelHtml({ appMarkup: '<div id="app"></div>' }), {
+        allowEmptyAppRoot: true,
+      }).ok,
+      true
+    );
 
     // Valid CSP where a quoted directive precedes default-src 'none' MUST pass
     const reorderedCsp = buildValidPanelHtml({
@@ -640,6 +746,13 @@ describe("agy-mcp-kit Panel QA Gate (guard.ts) & tokens.css", () => {
       ["commented-out family token", buildValidPanelHtml({ css: TOKENS_CSS.replace("--s3: #E4EAF4;", "/* --s3: #E4EAF4; */") }), {}],
       ["missing reduced motion", buildValidPanelHtml({ css: TOKENS_CSS.replace(/prefers-reduced-motion/g, "x-motion") }), {}],
       ["commented-out reduced motion", buildValidPanelHtml({ css: TOKENS_CSS.replace(/@media\s*\(prefers-reduced-motion:\s*reduce\)[\s\S]*$/i, "/* @media (prefers-reduced-motion: reduce) {} */") }), {}],
+      ["host --color-background-primary on html/body CSS", buildValidPanelHtml({ css: `${TOKENS_CSS}\nhtml, body { background: var(--color-background-primary, var(--bg)); }` }), {}],
+      ["host --color-background-primary on body inline style", buildValidPanelHtml({ bodyTag: '<body style="background:#0B0D12;background-color:var(--color-background-primary,#0B0D12)">' }), {}],
+      ["missing #app root", buildValidPanelHtml({ appMarkup: "<main>Panel</main>" }), {}],
+      ["empty #app root without boot-frame", buildValidPanelHtml({ appMarkup: '<div id="app"></div>' }), {}],
+      ["commented-out boot-frame inside #app", buildValidPanelHtml({ appMarkup: '<div id="app"><!-- <div class="boot-frame">x</div> --></div>' }), {}],
+      ["boot-frame outside empty #app", buildValidPanelHtml({ appMarkup: '<div id="app"></div><div class="boot-frame">outside</div>' }), {}],
+      ["boot-frame only inside script string", buildValidPanelHtml({ appMarkup: '<div id="app"></div>', scriptBlock: `<script>const s='<div class="boot-frame">x</div>';</script>` }), {}],
     ];
 
     for (const [label, html, opts] of cases) {

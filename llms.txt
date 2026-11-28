@@ -14,9 +14,9 @@
 - [src/test_guard.rs](src/test_guard.rs): Compile-time `#[cfg(test)]` refusal helper (`ensure_not_in_test`, `guard_host_effect!`)
 
 ## Panel Kit (`panel/`)
-- [panel/tokens.css](panel/tokens.css): 22 canonical Lucid Indigo two-letter tokens (dark `#0B0D12` / Cobalt `#6895FF` / ok `#34D399`, light `#F8FAFD` / Cobalt `#2952CC` / ok `#059669`), reduced-motion
-- [panel/bridge.ts](panel/bridge.ts): Strict `ev.source === parent` PostMessage bridge (`2026-01-26`), `serverTools`, live theme sync (`#0B0D12` / `#F8FAFD`), net RTT
-- [panel/guard.ts](panel/guard.ts): Shared Panel QA & i18n gate (`assertPanelInvariants`, `checkI18nParity`, `checkEnNoCjk`, 64 KiB / 65,536 B hard, 56 KiB / 57,344 B warn, CLI + ESM)
+- [panel/tokens.css](panel/tokens.css): 22 canonical Lucid Indigo two-letter tokens (dark `#0B0D12` / Cobalt `#6895FF` / ok `#34D399`, light `#F8FAFD` / Cobalt `#2952CC` / ok `#059669`), Frame-0 `.boot-frame` shell, reduced-motion
+- [panel/bridge.ts](panel/bridge.ts): Strict `ev.source === parent` PostMessage bridge (`2026-01-26`), `serverTools`, live theme sync (`#0B0D12` / `#F8FAFD`, `rAF`-deferred light switch on `.boot-frame`), net RTT
+- [panel/guard.ts](panel/guard.ts): Shared Panel QA & i18n gate (`assertPanelInvariants`, Frame-0 `.boot-frame` & canvas bg checks, `checkI18nParity`, `checkEnNoCjk`, 64 KiB / 65,536 B hard, 56 KiB / 57,344 B warn, CLI + ESM)
 
 ## Sync & Hygiene Scripts
 - [scripts/sync-kit.sh](scripts/sync-kit.sh): Vendor canonical files into one or more target repos (`--panel`, `--files`, `--map`, `--check`, `--update-manifest`, `--check-manifest`)
