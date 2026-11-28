@@ -35,8 +35,8 @@
     },
     "panel/guard.ts": {
       "defaultDest": "panel/kit/guard.ts",
-      "sha256": "d581e486273bf29ac0dc8c82ac4fd9ba0ff87845454f23289a557cabe5c2f303",
-      "bytes": 22275
+      "sha256": "d11704491380e335d7cb6cf34ed8878fd2036da3d8d3e1fec7c6caa5cd29b612",
+      "bytes": 22533
     },
     "scripts/check_sanitized.sh": {
       "defaultDest": "scripts/check_sanitized.sh",

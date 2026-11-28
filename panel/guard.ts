@@ -109,9 +109,15 @@ function hasBootFrameInAppRoot(htmlNoComments: string): boolean {
     ? appSubtree.slice(openTagMatch[0].length).replace(/<\s*\/\s*div\s*>\s*$/i, "")
     : "";
   if (inner.trim().length === 0) return false;
-  return /<[a-z0-9-]+\b[^>]*(?:^|\s)class\s*=\s*(?:["'][^"']*\bboot-frame\b[^"']*["']|[^\s"'=<>`]*\bboot-frame\b)/i.test(
-    appSubtree
-  );
+  for (const tagMatch of appSubtree.matchAll(/<[a-z0-9-]+\b[^>]*>/gi)) {
+    const classMatch = tagMatch[0].match(
+      /(?:^|\s)class\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+))/i
+    );
+    if (!classMatch) continue;
+    const rawClasses = classMatch[1] ?? classMatch[2] ?? classMatch[3] ?? "";
+    if (rawClasses.split(/\s+/).includes("boot-frame")) return true;
+  }
+  return false;
 }
 
 /**
@@ -219,13 +225,13 @@ export function checkPanelInvariants(
   const styleBlocks = [...htmlNoComments.matchAll(/<style\b[^>]*>([\s\S]*?)<\/style>/gi)].map((m) => m[1]);
   const combinedCss = styleBlocks.join("\n").replace(/\/\*[\s\S]*?\*\//g, "");
 
-  // Reject host --color-background-primary on html/body canvas (prevents #FFFFFF flash during webview hydration)
+  // Reject host --color-background-primary on html/body/:root canvas (prevents #FFFFFF flash during webview hydration)
   const hostBgOnCanvas =
     /\bbackground(?:-color)?\s*:\s*[^"';>]*var\(\s*--color-background-primary\b/i.test(htmlTag) ||
     /\bbackground(?:-color)?\s*:\s*[^"';>]*var\(\s*--color-background-primary\b/i.test(bodyTag) ||
     [...combinedCss.matchAll(/([^{}]+)\{([^{}]*)\}/g)].some(
       ([, sel, decls]) =>
-        /\b(?:html|body|:root)\b/i.test(sel) &&
+        /(?:\b(?:html|body)\b|:root\b)/i.test(sel) &&
         /\bbackground(?:-color)?\s*:\s*[^;{}]*var\(\s*--color-background-primary\b/i.test(decls)
     );
   if (hostBgOnCanvas) {
