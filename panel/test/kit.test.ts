@@ -14,6 +14,7 @@ import {
   applyHostStyleVariables,
   measureNetRttMs,
   parseColorLum,
+  resolveHostTheme,
 } from "../bridge.ts";
 import type {
   BridgeDocLike,
@@ -22,6 +23,8 @@ import type {
   BridgeStyleTarget,
   BridgeTargetWindow,
   BridgeWindow,
+  DocumentTheme,
+  ThemePreference,
 } from "../bridge.ts";
 import {
   DARK_ACCENT_HEX,
@@ -639,6 +642,226 @@ describe("agy-mcp-kit Panel Bridge (SEP-1865)", () => {
     assert.equal(merged?.styles?.css?.extra, "body{}");
     app2.close();
   });
+
+  it("supports 3-mode ThemePreference (system/light/dark), onhostthemechanged, DOM parseColorLum fallback, and zero-mutation SSR no-op", async () => {
+    // 1. DOM getComputedStyle fallback in parseColorLum (oklch, lab, hsl, color(srgb ...), light-dark(...))
+    //    plus host theme resolution across colorScheme, appearance, and --vscode-editor-background
+    assert.ok((parseColorLum("color(srgb 0.9725 0.9804 0.9922)") ?? 0) > 0.9);
+    assert.ok((parseColorLum("color(srgb 0.0431 0.0510 0.0706 / 95%)") ?? 1) < 0.1);
+    assert.equal(parseColorLum("color(srgb 1 1 1 / 0.2)"), null);
+    assert.equal(parseColorLum("currentColor"), null);
+    assert.equal(parseColorLum("inherit"), null);
+
+    const probeEnv = makeFakeEnv();
+    let mountedProbes = 0;
+    const computedMap: Record<string, string> = {
+      "oklch(0.98 0.01 250)": "color(srgb 0.9725 0.9804 0.9922)",
+      "lab(8% 0 -4)": "rgb(15, 18, 26)",
+      "hsl(220 30% 98%)": "rgb(248, 250, 253)",
+      "light-dark(#f8fafd, #0b0d12)": "rgb(248, 250, 253)",
+      "var(--undefined-token)": "rgba(0, 0, 0, 0)",
+    };
+    probeEnv.doc.body!.appendChild = () => {
+      mountedProbes += 1;
+    };
+    probeEnv.doc.body!.removeChild = () => {
+      mountedProbes -= 1;
+    };
+    probeEnv.doc.createElement = () => {
+      const styleState = {
+        color: "",
+        backgroundColor: "",
+        display: "",
+        setProperty(name: string, value: string) {
+          if (value === "not-a-valid-color") return;
+          if (name === "background-color") styleState.backgroundColor = value;
+          if (name === "color") styleState.color = value;
+        },
+      };
+      return { id: "", textContent: "", style: styleState };
+    };
+    probeEnv.win.getComputedStyle = (el: unknown) => {
+      const probe = el as BridgeStyleElement;
+      const key = probe.style?.backgroundColor || probe.style?.color || "";
+      return {
+        backgroundColor: computedMap[key] ?? "rgba(0, 0, 0, 0)",
+        getPropertyValue: (prop: string) =>
+          prop === "--vscode-editor-background" ? "oklch(0.98 0.01 250)" : "",
+      };
+    };
+
+    assert.ok((parseColorLum("oklch(0.98 0.01 250)", probeEnv.doc, probeEnv.win) ?? 0) > 0.9);
+    assert.ok((parseColorLum("lab(8% 0 -4)", probeEnv.doc, probeEnv.win) ?? 1) < 0.1);
+    assert.ok((parseColorLum("hsl(220 30% 98%)", probeEnv.doc, probeEnv.win) ?? 0) > 0.9);
+    assert.ok((parseColorLum("light-dark(#f8fafd, #0b0d12)", probeEnv.doc, probeEnv.win) ?? 0) > 0.9);
+    assert.equal(parseColorLum("var(--undefined-token)", probeEnv.doc, probeEnv.win), null);
+    assert.equal(parseColorLum("not-a-valid-color", probeEnv.doc, probeEnv.win), null);
+    assert.equal(mountedProbes, 0, "temporary probe element must always be detached");
+
+    assert.equal(resolveHostTheme({ colorScheme: "vscode-light" }, probeEnv.doc, probeEnv.win), "light");
+    assert.equal(resolveHostTheme({ appearance: " solarized-dark " }, probeEnv.doc, probeEnv.win), "dark");
+    // Ambiguous CSS dual keyword "light dark" falls through to --vscode-editor-background luminance
+    assert.equal(
+      resolveHostTheme({ colorScheme: "light dark" }, probeEnv.doc, probeEnv.win),
+      "light"
+    );
+    assert.equal(
+      resolveHostTheme(
+        { styles: { variables: { "--vscode-editor-background": "lab(8% 0 -4)" } } },
+        probeEnv.doc,
+        probeEnv.win
+      ),
+      "dark"
+    );
+
+    // 2. Zero-mutation no-op when SSR HTML already booted in Light Mode (even with .boot-frame mounted!)
+    const ssrLightEnv = makeFakeEnv();
+    ssrLightEnv.attrs.set("data-theme", "light");
+    ssrLightEnv.metaAttrs.set("content", "light");
+    ssrLightEnv.doc.documentElement!.style!.colorScheme = "light";
+    ssrLightEnv.doc.documentElement!.style!.backgroundColor = "rgb(248, 250, 253)";
+    ssrLightEnv.doc.body!.style!.backgroundColor = "#F8FAFD";
+    let domWrites = 0;
+    let rafCalls = 0;
+    ssrLightEnv.doc.documentElement!.setAttribute = (k: string, v: string) => {
+      domWrites += 1;
+      ssrLightEnv.attrs.set(k, v);
+    };
+    ssrLightEnv.doc.querySelector = (sel: string) => {
+      if (sel === ".boot-frame") {
+        return { getAttribute: () => "boot-frame", setAttribute: () => {} };
+      }
+      if (sel.includes('meta[name="color-scheme"]')) {
+        return {
+          getAttribute: (k: string) => ssrLightEnv.metaAttrs.get(k) ?? null,
+          setAttribute: (k: string, v: string) => {
+            domWrites += 1;
+            ssrLightEnv.metaAttrs.set(k, v);
+          },
+        };
+      }
+      return null;
+    };
+    ssrLightEnv.win.requestAnimationFrame = () => {
+      rafCalls += 1;
+      return 1;
+    };
+    applyDocumentTheme("light", ssrLightEnv.doc, ssrLightEnv.win);
+    assert.equal(domWrites, 0, "matching SSR light document must perform zero DOM writes");
+    assert.equal(rafCalls, 0, "matching SSR light document must not defer via rAF");
+
+    // 3. BridgeApp setThemePreference("system" | "light" | "dark"), getResolvedHostTheme, and onhostthemechanged
+    const env = makeFakeEnv();
+    const hostThemes: DocumentTheme[] = [];
+    const parent: BridgeTargetWindow = {
+      postMessage(rawMsg: unknown) {
+        const msg = rawMsg as { method?: string; id?: number };
+        if (msg.method === "ui/initialize") {
+          setImmediate(() =>
+            env.win.emit("message", {
+              source: parent,
+              origin: "https://agy.host",
+              data: {
+                jsonrpc: "2.0",
+                id: msg.id,
+                result: {
+                  protocolVersion: LATEST_PROTOCOL_VERSION,
+                  hostCapabilities: { serverTools: {} },
+                  hostContext: { colorScheme: "light" },
+                },
+              },
+            })
+          );
+        }
+      },
+    };
+    env.win.parent = parent;
+
+    const app = App({ name: "theme-pref", version: "0.4.2" }, {}, { window: env.win, document: env.doc });
+    assert.equal(app.getThemePreference(), "system");
+    assert.equal(app.getResolvedHostTheme(), null);
+
+    // User forces "dark" BEFORE connect() -> connect() with light hostContext MUST keep "dark" DOM
+    // while still tracking resolvedHostTheme === "light" and firing onhostthemechanged("light")!
+    const prefBefore: ThemePreference = "dark";
+    assert.equal(app.setThemePreference(prefBefore), "dark");
+    assert.equal(app.getThemePreference(), "dark");
+    assert.equal(env.attrs.get("data-theme"), "dark");
+
+    app.onhostthemechanged = (ht) => {
+      hostThemes.push(ht);
+    };
+    await app.connect();
+    assert.equal(app.getResolvedHostTheme(), "light");
+    assert.deepEqual(hostThemes, ["light"]);
+    assert.equal(env.attrs.get("data-theme"), "dark", "forced dark must not be overwritten on connect");
+
+    // Host switches dark -> light while user preference is forced "light" / "dark"
+    env.win.emit("message", {
+      source: parent,
+      origin: "https://agy.host",
+      data: {
+        jsonrpc: "2.0",
+        method: "ui/notifications/host-context-changed",
+        params: { colorScheme: "dark" },
+      },
+    });
+    await new Promise((r) => setImmediate(r));
+    assert.equal(app.getResolvedHostTheme(), "dark");
+    assert.deepEqual(hostThemes, ["light", "dark"]);
+
+    // Non-theme host-context update must NOT re-fire onhostthemechanged
+    env.win.emit("message", {
+      source: parent,
+      origin: "https://agy.host",
+      data: {
+        jsonrpc: "2.0",
+        method: "ui/notifications/host-context-changed",
+        params: { containerDimensions: { width: 360 } },
+      },
+    });
+    await new Promise((r) => setImmediate(r));
+    assert.deepEqual(hostThemes, ["light", "dark"]);
+
+    // Force "light" while host is "dark", then host changes to "light", then force "dark", then "system"
+    assert.equal(app.setThemePreference("light"), "light");
+    assert.equal(env.attrs.get("data-theme"), "light");
+    assert.equal(env.doc.documentElement?.style?.backgroundColor, "#F8FAFD");
+
+    env.win.emit("message", {
+      source: parent,
+      origin: "https://agy.host",
+      data: {
+        jsonrpc: "2.0",
+        method: "ui/notifications/host-context-changed",
+        params: { colorScheme: "dark" },
+      },
+    });
+    await new Promise((r) => setImmediate(r));
+    assert.equal(env.attrs.get("data-theme"), "light", "forced light must survive dark host notification");
+
+    // Switching back to "system" ("Follow Agy") immediately applies live resolvedHostTheme ("dark")
+    assert.equal(app.setThemePreference("system"), "dark");
+    assert.equal(app.getThemePreference(), "system");
+    assert.equal(env.attrs.get("data-theme"), "dark");
+    assert.equal(env.doc.documentElement?.style?.backgroundColor, "#0B0D12");
+
+    // And subsequent host change in "system" mode updates DOM + fires onhostthemechanged
+    env.win.emit("message", {
+      source: parent,
+      origin: "https://agy.host",
+      data: {
+        jsonrpc: "2.0",
+        method: "ui/notifications/host-context-changed",
+        params: { appearance: "light" },
+      },
+    });
+    await new Promise((r) => setImmediate(r));
+    assert.equal(app.getResolvedHostTheme(), "light");
+    assert.equal(env.attrs.get("data-theme"), "light");
+    assert.deepEqual(hostThemes, ["light", "dark", "light"]);
+    app.close();
+  });
 });
 
 describe("agy-mcp-kit Panel QA Gate (guard.ts) & tokens.css", () => {
@@ -662,9 +885,36 @@ describe("agy-mcp-kit Panel QA Gate (guard.ts) & tokens.css", () => {
     assert.equal(LIGHT_OK_HEX, "#059669");
     assert.equal(TOKENS_CSS.includes("--color-background-primary"), false);
     assert.equal(TOKENS_CSS.includes("--color-text-primary"), false);
+    assert.match(TOKENS_CSS, /--bd:\s*#07090DB8/i);
+    assert.match(TOKENS_CSS, /--bd:\s*#0F142040/i);
     assert.match(TOKENS_CSS, /\.boot-frame\b/);
     assert.match(TOKENS_CSS, /\.boot-bar\b/);
     assert.match(TOKENS_CSS, /\.boot-dot\b/);
+
+    // <script type="module"> (including top-level await & export) MUST pass for non-blocking Frame-0 paint
+    assert.equal(
+      checkPanelInvariants(
+        buildValidPanelHtml({
+          scriptBlock: `<script type="module">/*__BOOT__*/const ok = await Promise.resolve(1); export { ok };</script>`,
+        }),
+        { bootPlaceholder: "/*__BOOT__*/" }
+      ).ok,
+      true
+    );
+
+    // Canonical Light SSR HTML (data-theme="light" + #F8FAFD + color-scheme:light + <script type="module">) MUST pass
+    assert.equal(
+      checkPanelInvariants(
+        buildValidPanelHtml({
+          htmlTag: '<html lang="zh-CN" data-theme="light" style="background:#F8FAFD;color-scheme:light">',
+          metaTag: '<meta name="color-scheme" content="light">',
+          bodyTag: '<body style="background:#F8FAFD">',
+          scriptBlock: '<script type="module">/*__BOOT__*/const lightOk = 1;</script>',
+        }),
+        { bootPlaceholder: "/*__BOOT__*/" }
+      ).ok,
+      true
+    );
 
     // Minified unquoted id=app / class=boot-frame and extra #app attributes MUST pass
     assert.equal(
@@ -727,6 +977,12 @@ describe("agy-mcp-kit Panel QA Gate (guard.ts) & tokens.css", () => {
       ["missing dark meta lock", buildValidPanelHtml({ metaTag: '<meta name="color-scheme" content="dark light">' }), {}],
       ["commented dark meta lock", buildValidPanelHtml({ metaTag: '<!-- <meta name="color-scheme" content="dark"> -->' }), {}],
       ["missing dark body lock", buildValidPanelHtml({ bodyTag: "<body>" }), {}],
+      ["invalid data-theme value", buildValidPanelHtml({ htmlTag: '<html data-theme="system" style="background:#0B0D12;color-scheme:dark">' }), {}],
+      ["light style without data-theme=light", buildValidPanelHtml({ htmlTag: '<html style="background:#F8FAFD;color-scheme:light">', metaTag: '<meta name="color-scheme" content="light">', bodyTag: '<body style="background:#F8FAFD">' }), {}],
+      ["light data-theme with dark meta", buildValidPanelHtml({ htmlTag: '<html data-theme="light" style="background:#F8FAFD;color-scheme:light">', metaTag: '<meta name="color-scheme" content="dark">', bodyTag: '<body style="background:#F8FAFD">' }), {}],
+      ["light data-theme with dark body", buildValidPanelHtml({ htmlTag: '<html data-theme="light" style="background:#F8FAFD;color-scheme:light">', metaTag: '<meta name="color-scheme" content="light">', bodyTag: '<body style="background:#0B0D12">' }), {}],
+      ["unsupported script type", buildValidPanelHtml({ scriptBlock: '<script type="text/plain">const x=1;</script>' }), {}],
+      ["module script top-level return", buildValidPanelHtml({ scriptBlock: '<script type="module">await Promise.resolve(1); return 2;</script>' }), {}],
       ["prefers-color-scheme", buildValidPanelHtml({ css: `${TOKENS_CSS}\n@media(prefers-color-scheme:light){body{color:#000}}` }), {}],
       ["opacity:0 keyframe", buildValidPanelHtml({ css: `${TOKENS_CSS}\n@keyframes fade{from{opacity:0}to{opacity:1}}` }), {}],
       ["webkit opacity:0% !important keyframe", buildValidPanelHtml({ css: `${TOKENS_CSS}\n@-webkit-keyframes fade{0%{opacity:0% !important}100%{opacity:1}}` }), {}],

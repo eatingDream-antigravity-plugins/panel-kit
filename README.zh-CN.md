@@ -46,8 +46,8 @@ Panel Kit 是这组插件共用的桥接层、主题令牌与构建校验套件�
 | **热读 SWR 缓存（`src/swr_cache.rs`）** | `< 1 ms` 缓存热读、后台去重刷新、有界冷启动等待与基于版本号的无变更快速返回。 |
 | **安全 HTML 注入（`src/html_boot.rs`）** | 基于 `(mtime, size)` 的模板缓存，并对 `</script>` 与 `<!--` 做安全 JSON 转义。 |
 | **零副作用测试护栏（`src/test_guard.rs`）** | 编译期测试模式拒绝器，防止单元测试意外改动屏幕、浏览器或真实宿主机状态。 |
-| **静夜靛蓝主题与桥接（`panel/tokens.css`、`panel/bridge.ts`）** | 22 个深浅色令牌（`#0B0D12` / `#F8FAFD`，钴蓝 `#6895FF` / `#2952CC`）、严格父窗口 PostMessage 校验、实时主题同步与净 RTT 测量。 |
-| **无浏览器 QA 与 i18n 门禁（`panel/guard.ts`）** | 强制 `<= 64 KiB`（`65,536 B`，`56 KiB` 预警）单脚本 CSP 预算、静夜靛蓝令牌与深色优先锁定检查，并提供 `checkI18nParity` 与 `checkEnNoCjk` 中英文文案校验。 |
+| **静夜靛蓝主题与桥接（`panel/tokens.css`、`panel/bridge.ts`）** | 深浅色静夜靛蓝令牌（`#0B0D12` / `#F8FAFD`，钴蓝 `#6895FF` / `#2952CC`，`--bd` 遮罩）、严格父窗口 PostMessage 校验、三态宿主主题同步（`system` / `light` / `dark`）与净 RTT 测量。 |
+| **无浏览器 QA 与 i18n 门禁（`panel/guard.ts`）** | 强制 `<= 64 KiB`（`65,536 B`，`56 KiB` 预警）内联 `<script>` / `<script type="module">` CSP 预算、深浅色首字节 SSR 锁定与令牌检查，并提供 `checkI18nParity` 与 `checkEnNoCjk` 中英文文案校验。 |
 
 ## 快速开始
 
