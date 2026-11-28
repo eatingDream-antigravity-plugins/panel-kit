@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.1](https://github.com/eatingDream-antigravity-plugins/panel-kit/compare/v0.4.0...v0.4.1) (2026-11-28)
+
+
+### Bug Fixes
+
+* eliminate white-screen flash with Frame-0 boot shell and host bg guards ([#13](https://github.com/eatingDream-antigravity-plugins/panel-kit/issues/13)) ([fe4af29](https://github.com/eatingDream-antigravity-plugins/panel-kit/commit/fe4af2932cc7d1196a956e4d9347e7185bb4c343))
+
 ## [0.4.0](https://github.com/eatingDream-antigravity-plugins/panel-kit/compare/v0.3.0...v0.4.0) (2026-11-27)
 
 

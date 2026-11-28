@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "kit": "agy-mcp-kit",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "files": {
     "src/mcp_protocol.rs": {
       "defaultDest": "src/kit/mcp_protocol.rs",
